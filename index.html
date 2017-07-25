@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- The above 3 meta tags *must* come first in the head; any other head content must come *after* these tags -->
+  <title>Easy Page Statistics</title>
+
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+
+  <!-- Optional theme -->
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+
+  <!-- own stylesheet -->
+  <style type="text/css">
+    footer {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      /* Set the fixed height of the footer here */
+      height: 30px;
+      background-color: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+
+  <!-- Latest compiled and minified JavaScript -->
+  <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+
+  <!-- for datetime picker -->
+  <script type="text/javascript" src="//cdn.jsdelivr.net/momentjs/latest/moment.min.js"></script>
+
+  <!-- Include Date Range Picker -->
+  <script type="text/javascript" src="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.js"></script>
+  <link rel="stylesheet" type="text/css" href="//cdn.jsdelivr.net/bootstrap.daterangepicker/2/daterangepicker.css" />
+
+  <script>
+    var FB;
+
+      // Initializes the Facebook SDK
+      window.fbAsyncInit = function() {
+        FB.init({
+          appId      : '1881659082156641',
+          xfbml      : true,
+          version    : 'v2.10'
+        });
+
+        FB.AppEvents.logPageView();
+      };
+
+      (function(d, s, id){
+       var js, fjs = d.getElementsByTagName(s)[0];
+       if (d.getElementById(id)) {return;}
+       js = d.createElement(s); js.id = id;
+       js.src = "//connect.facebook.net/en_US/sdk.js";
+       fjs.parentNode.insertBefore(js, fjs);
+     }(document, 'script', 'facebook-jssdk'));
+
+      // Add .format to strings
+      if (!String.prototype.format) {
+        String.prototype.format = function() {
+          var args = arguments;
+          return this.replace(/{(\d+)}/g, function(match, number) { 
+            return typeof args[number] != 'undefined'
+            ? args[number]
+            : match
+            ;
+          });
+        };
+      }
+
+      function updateLikeCount(count, index) {
+        document.getElementsByName("likes"+index)[0].value = count
+      }
+
+      function updatePostCount(count, index) {
+        document.getElementsByName("posts"+index)[0].value = count
+      }
+
+      function addPostCount(count, index) {
+        document.getElementsByName("posts"+index)[0].value = Number(document.getElementsByName("posts"+index)[0].value) + count
+      }
+
+      function cleanPageURL(page, index) {
+        var facebook = "facebook."
+
+        if (page.indexOf(facebook) != -1) { // It must be an entire URL not just page name then
+          page = page.substring(page.indexOf(facebook) + facebook.length) // Remove facebook
+          page = page.substring(page.indexOf("/") + 1) // Remove the TLD
+          page = page.substring(0, page.indexOf("/"))  // Remove various endings after page name
+        }
+
+        return page;
+      }
+
+      $(document).ready(function(){
+        var i=1;
+
+        $("#add_row").click(function(){
+          $('#page'+i).html("<td>"+ (i+1) +"</td><td><input name='name"+i+"' type='text' placeholder='Page URL' value='' class='form-control input-md'/> </td><td><input name='likes"+i+"' type='text' placeholder='Likes' value='' class='form-control input-md' disabled='disabled'/></td><td><input  name='posts"+i+"' type='text' placeholder='Posts' value='' class='form-control input-md' disabled='disabled'></td>");
+
+          $('#tab_logic').append('<tr id="page'+(i+1)+'"></tr>');
+          i++;
+        });
+
+        $("#delete_row").click(function(){
+         if(i>1){
+           $("#page"+(i-1)).html('');
+           i--;
+         }
+       });
+
+        var url_likes = "https://graph.facebook.com/v2.10/{0}?access_token={1}&fields=name,fan_count";
+        var postsIncrement = 100;
+        var url_posts = "https://graph.facebook.com/v2.10/{0}/posts?fields=id&limit={1}&access_token={2}";
+        var url_posts_after = "https://graph.facebook.com/v2.10/{0}/posts?fields=id&limit={1}&after={2}&access_token={3}";
+        var date_filter = "&since={0}&until={1}";
+
+        $("#check_pages").click(function(){
+
+
+          FB.getLoginStatus(function(response) {
+            if (response.status == "connected") {
+              var access_token = FB.getAuthResponse().accessToken
+
+              var j;
+              for (j = 0; j < i; j++) {
+
+                (function() {
+
+                  var temp = j;
+
+                // Make sure they're reset from previous checks
+                updateLikeCount(0, temp);
+                updatePostCount(0, temp);
+
+                var xmlhttp = new XMLHttpRequest();
+
+                xmlhttp.onreadystatechange = function() {
+                  if (this.readyState == 4 && this.status == 200) {
+                    var responseJson = JSON.parse(this.responseText);
+                    updateLikeCount(responseJson.fan_count, temp);
+                  }
+                }
+
+                var page = cleanPageURL(document.getElementsByName("name"+j)[0].value)
+                var url = url_likes.format(page, access_token);
+
+                xmlhttp.open("GET", url, true);
+                xmlhttp.send();
+
+                function RequestMorePosts(after, currentCount, since, until) {
+
+                  var xmlhttp = new XMLHttpRequest();
+
+                  xmlhttp.onreadystatechange = function() {
+                    if (this.readyState == 4 && this.status == 200) {
+                      var responseJson = JSON.parse(this.responseText);
+
+                        // Updates during calculation
+                        if (responseJson.data.length == postsIncrement) {
+                          addPostCount(responseJson.data.length, temp);
+                          return RequestMorePosts(responseJson.paging.cursors.after, currentCount + responseJson.data.length, since, until);
+                        } else if (responseJson.data.length > 0) {
+                          addPostCount(responseJson.data.length, temp);
+                          return currentCount + responseJson.data.length;
+                        } else {
+                          return currentCount;
+                        }
+                      }
+                    }
+
+                    if (after == null) {
+                      url = url_posts.format(page, postsIncrement, access_token);
+                    } else {
+                      url = url_posts_after.format(page, postsIncrement, after, access_token);
+                    }
+
+                    if (since != null && until != null) {
+                      url = url + date_filter.format(since, until)
+                    }
+
+                    xmlhttp.open("GET", url, true);
+                    xmlhttp.send();
+                  }
+
+                  var since
+                  var until
+                  if (document.getElementsByName("filterdates")[0].checked) {
+
+                    var daterange = document.getElementsByName("daterange")[0].value
+                    since = daterange.substring(0, daterange.indexOf(" - "))
+                    until = daterange.substring(daterange.indexOf(" - ") + " - ".length, daterange.length)
+                  }
+
+                  RequestMorePosts(null, 0, since, until);
+                })();
+              }
+            } else {
+              alert("Please log in before proceeding!")
+              FB.login()
+            }
+          });
+        });
+      });
+
+
+    // DateRangePicker http://www.daterangepicker.com
+    $(function() {
+
+      var start = moment().subtract(29, 'days');
+      var end = moment();
+
+      function cb(start, end) {
+        $('#reportrange span').html(start.format('MMMM D, YYYY') + ' - ' + end.format('MMMM D, YYYY'));
+      }
+
+      $('input[name="daterange"]').daterangepicker({
+        showDropdowns: true,
+        showWeekNumbers: true,
+        ranges: {
+         'Today': [moment(), moment()],
+         'Yesterday': [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+         'Last 7 Days': [moment().subtract(6, 'days'), moment()],
+         'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+         'This Month': [moment().startOf('month'), moment().endOf('month')],
+         'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+       },
+       startDate: start,
+       endDate: end,
+     }, cb);
+
+      cb(start, end);
+      
+    });
+
+    // Hide daterangepicker unless checkbox is checked
+    $(function () {
+      $('input[name="daterange"]').hide();
+
+        //show it when the checkbox is clicked
+        $('input[name="filterdates"]').on('click', function () {
+          if ($(this).prop('checked')) {
+            $('input[name="daterange"]').fadeIn();
+          } else {
+            $('input[name="daterange"]').hide();
+          }
+        });
+      });
+    </script>
+
+    <div id="fb-root"></div>
+    <script>(function(d, s, id) {
+      var js, fjs = d.getElementsByTagName(s)[0];
+      if (d.getElementById(id)) return;
+      js = d.createElement(s); js.id = id;
+      js.src = "//connect.facebook.net/en_GB/sdk.js#xfbml=1&version=v2.10&appId=1881659082156641";
+      fjs.parentNode.insertBefore(js, fjs);
+    }(document, 'script', 'facebook-jssdk'));
+  </script>
+
+  <div class="container">
+
+    <h1>Easy Page Statistics</h1>
+
+    <p>Please enter the facebook page url into the Page URL field, apply any filters and press the "Check pages" button.</p>
+    <br/>
+
+    <a id="add_row" class="btn btn-default pull-left">Add Row</a><a id='delete_row' class="pull-right btn btn-default">Delete Row</a>
+    <div class="row clearfix">
+      <div class="col-md-12 column">
+        <table class="table table-bordered table-hover" id="tab_logic">
+          <thead>
+            <tr >
+              <th class="text-center">
+                #
+              </th>
+              <th class="text-center">
+                Page URL
+              </th>
+              <th class="text-center">
+                Likes
+              </th>
+              <th class="text-center">
+                Posts
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr id='page0'>
+              <td>
+                1
+              </td>
+              <td>
+                <input type="text" name='name0'  placeholder='Page URL' value='' class="form-control"/>
+              </td>
+              <td>
+                <input type="text" name='likes0' placeholder='Likes' value='' class="form-control" disabled="disabled"/>
+              </td>
+              <td>
+                <input type="text" name='posts0' placeholder='Posts' value='' class="form-control" disabled="disabled"/>
+              </td>
+            </tr>
+            <tr id='page1'></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <label><input type="checkbox" id="filterdatesid" name="filterdates" value="value">Filter by dates</label>
+    <input type="text" name="daterange" value="01/01/2017 - 1/31/2017" />
+    <br/>
+    <a id="check_pages" class="btn btn-default pull-left">Check pages</a>
+    <div class="fb-login-button" data-width="500" data-max-rows="1" data-size="small" data-button-type="login_with" data-show-faces="false" data-auto-logout-link="true" data-use-continue-as="false"></div>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>Created by <a target="_blank" href="https://linkedin.com/in/alexanderqh">Alexander Qvist-Hellum</a> - Latest version available at <a target="_blank"  href="https://github.com/Maldark/Easy-Page-Statistics">Github</a></p>
+    </div>
+  </footer>
+</body>
+</html>
