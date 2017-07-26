@@ -74,35 +74,58 @@
         };
       }
 
+      function capitalizeFirstLetter(string) {
+        return string.charAt(0).toUpperCase() + string.slice(1).toLowerCase();
+      }
+
+      var UrlErrorCode = Object.freeze({"OK":0, "GROUP":1, "ILLEGAL_CHARACTER":2, "UNKNOWN":99})
+      var PageUpdateStatus = Object.freeze({"WORKING": "Working", "FINISHED": "Finished", "NOT_STARTED": "Not started"})
+
       function updateLikeCount(count, index) {
-        document.getElementsByName("likes"+index)[0].value = count
+        document.getElementsByName("likes"+index)[0].value = count;
       }
 
       function updatePostCount(count, index) {
-        document.getElementsByName("posts"+index)[0].value = count
+        document.getElementsByName("posts"+index)[0].value = count;
       }
 
       function addPostCount(count, index) {
-        document.getElementsByName("posts"+index)[0].value = Number(document.getElementsByName("posts"+index)[0].value) + count
+        document.getElementsByName("posts"+index)[0].value = Number(document.getElementsByName("posts"+index)[0].value) + count;
       }
 
-      function cleanPageURL(page, index) {
-        var facebook = "facebook."
+      function updateStatus(value, index) {
+        document.getElementsByName("status"+index)[0].value = value;
+      }
 
-        if (page.indexOf(facebook) != -1) { // It must be an entire URL not just page name then
-          page = page.substring(page.indexOf(facebook) + facebook.length) // Remove facebook
-          page = page.substring(page.indexOf("/") + 1) // Remove the TLD
-          page = page.substring(0, page.indexOf("/"))  // Remove various endings after page name
+      var illegalCharacters = "/"
+
+      function cleanPageURL(page, index) {
+        var pattern = "facebook."
+
+        if (page.indexOf(pattern) != -1) { // It must be an entire URL not just page name then
+          page = page.substring(page.indexOf(pattern) + pattern.length); // Remove pattern
+          page = page.substring(page.indexOf("/") + 1); // Remove the TLD
+          if (page.substring(0, "groups/".length) == "groups/") { // The URL is a group, not a page
+            return [null, UrlErrorCode.GROUP];
+          }
+          page = page.substring(0, page.indexOf("/")); // Remove various endings after page name
         }
 
-        return page;
+        var i;
+        for (i = 0; i < page.length; i++) {
+          if (illegalCharacters.indexOf(page[i]) != -1) {
+            return [null, UrlErrorCode.ILLEGAL_CHARACTER];
+          }
+        }
+
+        return [page, UrlErrorCode.OK];
       }
 
       $(document).ready(function(){
         var i=1;
 
         $("#add_row").click(function(){
-          $('#page'+i).html("<td>"+ (i+1) +"</td><td><input name='name"+i+"' type='text' placeholder='Page URL' value='' class='form-control input-md'/> </td><td><input name='likes"+i+"' type='text' placeholder='Likes' value='' class='form-control input-md' disabled='disabled'/></td><td><input  name='posts"+i+"' type='text' placeholder='Posts' value='' class='form-control input-md' disabled='disabled'></td>");
+          $('#page'+i).html("<td>"+ (i+1) +"</td><td><input name='name"+i+"' type='text' placeholder='Page URL' value='' class='form-control input-md'/> </td><td><input name='likes"+i+"' type='text' placeholder='Likes' value='' class='form-control input-md' disabled='disabled'/></td><td><input name='posts"+i+"' type='text' placeholder='Posts' value='' class='form-control input-md' disabled='disabled'></td><td><input name='status"+i+"' type='text'  value='' class='form-control input-md' disabled='disabled'></td>");
 
           $('#tab_logic').append('<tr id="page'+(i+1)+'"></tr>');
           i++;
@@ -123,10 +146,9 @@
 
         $("#check_pages").click(function(){
 
-
           FB.getLoginStatus(function(response) {
             if (response.status == "connected") {
-              var access_token = FB.getAuthResponse().accessToken
+              var access_token = FB.getAuthResponse().accessToken;
 
               var j;
               for (j = 0; j < i; j++) {
@@ -134,10 +156,6 @@
                 (function() {
 
                   var temp = j;
-
-                // Make sure they're reset from previous checks
-                updateLikeCount(0, temp);
-                updatePostCount(0, temp);
 
                 var xmlhttp = new XMLHttpRequest();
 
@@ -148,8 +166,25 @@
                   }
                 }
 
-                var page = cleanPageURL(document.getElementsByName("name"+j)[0].value)
+                var cleanedPage = cleanPageURL(document.getElementsByName("name"+j)[0].value);
+                if (cleanedPage[1] != UrlErrorCode.OK || cleanedPage[0] == null) {
+                  if (cleanedPage[1] == UrlErrorCode.GROUP) {
+                    alert("#" + temp + ": An error occured, you have entered the URL for a group, not a page.");
+                  } else if (cleanedPage[1] == UrlErrorCode.ILLEGAL_CHARACTER) {
+                    alert("#" + temp + ": An unknown error occured, your url includes one or more illegal characters.");
+                  } else {
+                    alert("#" + temp + ": An unknown error occured, please make sure the URL is to a Facebook page.");
+                  }
+                  return;
+                }
+
+                var page = cleanedPage[0];
                 var url = url_likes.format(page, access_token);
+
+                // Make sure they're reset from previous checks
+                updateLikeCount(0, temp);
+                updatePostCount(0, temp);
+                updateStatus(PageUpdateStatus.WORKING, temp);
 
                 xmlhttp.open("GET", url, true);
                 xmlhttp.send();
@@ -168,8 +203,10 @@
                           return RequestMorePosts(responseJson.paging.cursors.after, currentCount + responseJson.data.length, since, until);
                         } else if (responseJson.data.length > 0) {
                           addPostCount(responseJson.data.length, temp);
+                          updateStatus(PageUpdateStatus.FINISHED, temp);
                           return currentCount + responseJson.data.length;
                         } else {
+                          updateStatus(PageUpdateStatus.FINISHED, temp);
                           return currentCount;
                         }
                       }
@@ -182,28 +219,28 @@
                     }
 
                     if (since != null && until != null) {
-                      url = url + date_filter.format(since, until)
+                      url = url + date_filter.format(since, until);
                     }
 
                     xmlhttp.open("GET", url, true);
                     xmlhttp.send();
                   }
 
-                  var since
-                  var until
+                  var since;
+                  var until;
                   if (document.getElementsByName("filterdates")[0].checked) {
 
-                    var daterange = document.getElementsByName("daterange")[0].value
-                    since = daterange.substring(0, daterange.indexOf(" - "))
-                    until = daterange.substring(daterange.indexOf(" - ") + " - ".length, daterange.length)
+                    var daterange = document.getElementsByName("daterange")[0].value;
+                    since = daterange.substring(0, daterange.indexOf(" - "));
+                    until = daterange.substring(daterange.indexOf(" - ") + " - ".length, daterange.length);
                   }
 
                   RequestMorePosts(null, 0, since, until);
                 })();
               }
             } else {
-              alert("Please log in before proceeding!")
-              FB.login()
+              alert("Please log in before proceeding!");
+              FB.login();
             }
           });
         });
@@ -289,6 +326,9 @@
               <th class="text-center">
                 Posts
               </th>
+              <th class="text-center">
+                Status
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -304,6 +344,9 @@
               </td>
               <td>
                 <input type="text" name='posts0' placeholder='Posts' value='' class="form-control" disabled="disabled"/>
+              </td>
+              <td>
+                <input type="text" name='status0' value='' class="form-control" disabled="disabled"/>
               </td>
             </tr>
             <tr id='page1'></tr>
